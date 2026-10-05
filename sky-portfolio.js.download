@@ -1,0 +1,393 @@
+/**
+ * Main Sky Portfolio Coordinator
+ * Orchestrates Intro Gateway, Modal Cards, Re-condensing Bubbles, and Dock Actions
+ */
+
+document.addEventListener('DOMContentLoaded', () => {
+  const introGateway = document.getElementById('intro-gateway');
+  const introBubblesLayer = document.getElementById('intro-bubbles-layer');
+  const macroBubbles = Array.from(document.querySelectorAll('.macro-bubble'));
+  const skyModals = Array.from(document.querySelectorAll('.sky-modal-overlay'));
+
+  let isIntroActive = true;
+
+  /* -------------------------------------------------------------
+     1. Intro Gateway Flow: Pop -> Whoosh -> Reveal Sky
+     ------------------------------------------------------------- */
+  const dismissIntro = () => {
+    if (!isIntroActive) return;
+    isIntroActive = false;
+
+    // Pop sound & whoosh
+    if (window.soundEngine) {
+      window.soundEngine.resume();
+      window.soundEngine.playPop(1.1);
+      window.soundEngine.playWhoosh();
+    }
+
+    // All intro bubbles shoot upwards into the clouds
+    const allIntroBubbles = introBubblesLayer.querySelectorAll('.soap-bubble');
+    allIntroBubbles.forEach((b, idx) => {
+      setTimeout(() => {
+        b.classList.add('whoosh-upwards');
+      }, Math.random() * 120);
+    });
+
+    // Fade out intro gateway
+    setTimeout(() => {
+      introGateway.classList.add('dismissed');
+      // Reposition macro bubbles cleanly
+      if (window.bubbleEngine) {
+        window.bubbleEngine.repositionMacroBubbles();
+      }
+    }, 450);
+  };
+
+  // Setup floating bubbles in intro
+  if (introBubblesLayer && window.bubbleEngine) {
+    window.bubbleEngine.setupIntroBubbles(introBubblesLayer, () => {
+      dismissIntro();
+    });
+  }
+
+  // Also clicking intro card or background pops a bubble and enters
+  if (introGateway) {
+    introGateway.addEventListener('click', (e) => {
+      // Create burst at click position
+      if (window.bubbleEngine) {
+        window.bubbleEngine.createBurst(e.clientX, e.clientY, 30, 1);
+      }
+      dismissIntro();
+    });
+  }
+
+  /* -------------------------------------------------------------
+     2. Setup Macro Bubbles & Modal Open/Close Logic
+     ------------------------------------------------------------- */
+  if (window.bubbleEngine && macroBubbles.length > 0) {
+    window.bubbleEngine.setupMacroBubbles(macroBubbles);
+  }
+
+  // Open modal when clicking a macro bubble
+  macroBubbles.forEach((bubble) => {
+    bubble.addEventListener('click', (e) => {
+      e.stopPropagation();
+
+      const targetId = bubble.getAttribute('data-target');
+      const targetModal = document.getElementById(targetId);
+      if (!targetModal) return;
+
+      // Play pop sound
+      if (window.soundEngine) {
+        window.soundEngine.playPop(0.85);
+      }
+
+      // Burst particle explosion
+      const rect = bubble.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      if (window.bubbleEngine) {
+        window.bubbleEngine.createBurst(cx, cy, 40, 1.4);
+      }
+
+      // Hide bubble with burst animation
+      bubble.classList.add('popping');
+      setTimeout(() => {
+        bubble.style.visibility = 'hidden';
+      }, 300);
+
+      // Open target modal
+      setTimeout(() => {
+        targetModal.classList.add('active');
+        targetModal.setAttribute('data-source-bubble', bubble.id);
+      }, 150);
+    });
+  });
+
+  // Re-condense bubble & close modal function
+  window.recondenseBubble = function(modalOrId) {
+    const modal = typeof modalOrId === 'string' ? document.getElementById(modalOrId) : modalOrId;
+    if (!modal) return;
+
+    modal.classList.remove('active');
+
+    // Chime sound on re-condensing
+    if (window.soundEngine) {
+      window.soundEngine.playSparkle();
+    }
+
+    const sourceBubbleId = modal.getAttribute('data-source-bubble');
+    if (sourceBubbleId) {
+      const bubble = document.getElementById(sourceBubbleId);
+      if (bubble) {
+        setTimeout(() => {
+          bubble.style.visibility = 'visible';
+          bubble.classList.remove('popping');
+          bubble.style.animation = 'none';
+          bubble.offsetHeight; // reflow
+          bubble.style.animation = 'bubbleWobble 7s ease-in-out infinite alternate, bubblePuffIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+        }, 150);
+      }
+    }
+  };
+
+  // Close modal when clicking recondense button or backdrop
+  skyModals.forEach((modal) => {
+    const closeBtn = modal.querySelector('.btn-recondense-bubble');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => window.recondenseBubble(modal));
+    }
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        window.recondenseBubble(modal);
+      }
+    });
+  });
+
+  // Add keyframe for puffing bubble back in
+  const puffStyle = document.createElement('style');
+  puffStyle.innerHTML = `
+    @keyframes bubblePuffIn {
+      0% { transform: scale(0.1); opacity: 0; }
+      70% { transform: scale(1.15); opacity: 0.9; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  `;
+  document.head.appendChild(puffStyle);
+
+  /* -------------------------------------------------------------
+     3. Smart Dock Controls
+     ------------------------------------------------------------- */
+  // 3.1 Weather Toggle
+  const btnWeather = document.getElementById('btn-weather-mode');
+  if (btnWeather && window.weatherController) {
+    btnWeather.addEventListener('click', () => {
+      window.weatherController.toggleWeather();
+      if (window.soundEngine) window.soundEngine.playSparkle();
+    });
+  }
+
+  // 3.2 Sound Toggle
+  const btnSound = document.getElementById('btn-sound-toggle');
+  if (btnSound && window.soundEngine) {
+    btnSound.addEventListener('click', () => {
+      const isMuted = window.soundEngine.toggleMute();
+      btnSound.classList.toggle('sound-muted', isMuted);
+      btnSound.classList.toggle('sound-playing', !isMuted);
+      btnSound.setAttribute('data-tip', isMuted ? 'Đang tắt tiếng (Bấm bật)' : 'Đang bật âm thanh');
+    });
+  }
+
+  // 3.3 Wind Gust Button
+  const btnWind = document.getElementById('btn-wind-gust');
+  if (btnWind && window.weatherController) {
+    btnWind.addEventListener('click', () => {
+      window.weatherController.triggerWind();
+    });
+  }
+
+  // 3.4 Linear Reading View (Full CV Read Mode)
+  const btnLinear = document.getElementById('btn-linear-read');
+  const modalLinear = document.getElementById('modal-linear-reading');
+  const btnCloseLinear = document.getElementById('btn-close-linear');
+
+  if (btnLinear && modalLinear) {
+    btnLinear.addEventListener('click', () => {
+      modalLinear.classList.add('active');
+      if (window.soundEngine) window.soundEngine.playSparkle();
+    });
+  }
+  if (btnCloseLinear && modalLinear) {
+    btnCloseLinear.addEventListener('click', () => {
+      modalLinear.classList.remove('active');
+    });
+  }
+  if (modalLinear) {
+    modalLinear.addEventListener('click', (e) => {
+      if (e.target === modalLinear) {
+        modalLinear.classList.remove('active');
+      }
+    });
+  }
+
+  // 3.5 Re-open all bubbles / Re-condense all
+  const btnRestoreAll = document.getElementById('btn-restore-all');
+  if (btnRestoreAll) {
+    btnRestoreAll.addEventListener('click', () => {
+      skyModals.forEach(m => m.classList.remove('active'));
+      macroBubbles.forEach(bubble => {
+        bubble.style.visibility = 'visible';
+        bubble.classList.remove('popping');
+      });
+      if (window.soundEngine) window.soundEngine.playSparkle();
+      showSkyToast('🫧 Tất cả bong bóng đã ngưng tụ lại trên bầu trời!');
+    });
+  }
+
+  // 3.6 Return to Intro Gateway
+  const btnReturnIntro = document.getElementById('btn-return-intro');
+  if (btnReturnIntro) {
+    btnReturnIntro.addEventListener('click', () => {
+      isIntroActive = true;
+      introGateway.classList.remove('dismissed');
+      const allIntroBubbles = introBubblesLayer.querySelectorAll('.soap-bubble');
+      allIntroBubbles.forEach(b => {
+        b.classList.remove('whoosh-upwards');
+        b.style.display = 'block';
+      });
+      if (window.soundEngine) window.soundEngine.playSparkle();
+    });
+  }
+
+  /* -------------------------------------------------------------
+     4. Interactive Utilities: Sky Toast, Copy Text, Contact Form
+     ------------------------------------------------------------- */
+  window.showSkyToast = function(message) {
+    let toast = document.getElementById('sky-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'sky-toast';
+      toast.style.cssText = `
+        position: fixed;
+        top: 24px;
+        left: 50%;
+        transform: translateX(-50%) translateY(-20px);
+        background: rgba(255, 255, 255, 0.95);
+        color: #0c4a6e;
+        padding: 10px 24px;
+        border-radius: 30px;
+        font-size: 0.92rem;
+        font-weight: 700;
+        box-shadow: 0 10px 30px rgba(12, 74, 110, 0.25);
+        border: 2px solid #38bdf8;
+        z-index: 99999;
+        transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        opacity: 0;
+        pointer-events: none;
+        backdrop-filter: blur(8px);
+      `;
+      document.body.appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(-50%) translateY(-20px)';
+    }, 3000);
+  };
+
+  window.copySkyText = function(text, label) {
+    navigator.clipboard.writeText(text).then(() => {
+      showSkyToast(`✨ Đã sao chép ${label}: ${text}`);
+      if (window.soundEngine) window.soundEngine.playSparkle();
+    }).catch(() => {
+      showSkyToast(`Bạn hãy sao chép thủ công: ${text}`);
+    });
+  };
+
+  // Contact form submission with flying message bubble animation
+  const contactForm = document.getElementById('sky-contact-form');
+  if (contactForm) {
+    contactForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const sender = document.getElementById('contact-sender').value;
+      const msg = document.getElementById('contact-msg').value;
+
+      // Spawn a small message bubble flying away
+      spawnFlyingMessageBubble();
+      if (window.soundEngine) {
+        window.soundEngine.playSparkle();
+        window.soundEngine.playWhoosh();
+      }
+
+      showSkyToast(`💌 Cảm ơn ${sender}! Lời nhắn bong bóng đã bay vút vào bầu trời của Hân.`);
+      contactForm.reset();
+    });
+  }
+
+  function spawnFlyingMessageBubble() {
+    const bubble = document.createElement('div');
+    bubble.className = 'soap-bubble';
+    bubble.style.cssText = `
+      position: fixed;
+      bottom: 120px;
+      left: 50%;
+      width: 70px;
+      height: 70px;
+      z-index: 9999;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      pointer-events: none;
+      animation: flyMessageUp 2.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    `;
+    bubble.innerHTML = '💌';
+    document.body.appendChild(bubble);
+
+    setTimeout(() => {
+      if (window.bubbleEngine) {
+        bubbleEngine.createBurst(window.innerWidth / 2, window.innerHeight * 0.15, 30, 1.2);
+      }
+      bubble.remove();
+    }, 2400);
+  }
+
+  // Keyframe for flying message
+  const msgStyle = document.createElement('style');
+  msgStyle.innerHTML = `
+    @keyframes flyMessageUp {
+      0% { transform: translateX(-50%) translateY(0) scale(0.6); opacity: 0.9; }
+      50% { transform: translateX(calc(-50% + 40px)) translateY(-40vh) scale(1.1); opacity: 1; }
+      100% { transform: translateX(calc(-50% - 30px)) translateY(-85vh) scale(0.4); opacity: 0; }
+    }
+  `;
+  document.head.appendChild(msgStyle);
+
+  /* -------------------------------------------------------------
+     5. URL Hash Deep Linking Support (e.g., #soul, #about, etc.)
+     ------------------------------------------------------------- */
+  const hashMap = {
+    'soul': 'modal-soul',
+    'diary': 'modal-soul',
+    'about': 'modal-about',
+    'education': 'modal-education',
+    'achievements': 'modal-education',
+    'experience': 'modal-experience',
+    'projects': 'modal-projects',
+    'skills': 'modal-skills',
+    'contact': 'modal-contact',
+    'cv': 'modal-linear-reading',
+    'reading': 'modal-linear-reading'
+  };
+
+  const handleHashRouting = () => {
+    const rawHash = window.location.hash.replace('#', '').toLowerCase();
+    if (!rawHash) return;
+
+    const modalId = hashMap[rawHash] || `modal-${rawHash}`;
+    const targetModal = document.getElementById(modalId);
+
+    if (targetModal) {
+      dismissIntro();
+      setTimeout(() => {
+        skyModals.forEach(m => m.classList.remove('active'));
+        targetModal.classList.add('active');
+        const bubble = document.getElementById(`bubble-${rawHash}`);
+        if (bubble) {
+          bubble.style.visibility = 'hidden';
+          targetModal.setAttribute('data-source-bubble', bubble.id);
+        }
+      }, 500);
+    }
+  };
+
+  window.addEventListener('hashchange', handleHashRouting);
+  setTimeout(handleHashRouting, 400);
+});

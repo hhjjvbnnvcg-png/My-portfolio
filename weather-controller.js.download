@@ -1,0 +1,276 @@
+/**
+ * Weather Controller & Interactive Screen Condensation System
+ * Controls Sunny Rainbow Mode, Gentle Rain with Steamy Glass Condensation, and Wind Gusts
+ */
+
+class WeatherController {
+  constructor() {
+    this.skyWorld = document.querySelector('.sky-world');
+    this.currentMode = 'sunny'; // 'sunny' | 'rain'
+
+    // Rain canvas
+    this.rainCanvas = document.getElementById('rain-canvas');
+    this.rainCtx = this.rainCanvas ? this.rainCanvas.getContext('2d') : null;
+    this.raindrops = [];
+    this.rainAnimId = null;
+
+    // Condensation wipe canvas
+    this.condCanvas = document.getElementById('condensation-canvas');
+    this.condCtx = this.condCanvas ? this.condCanvas.getContext('2d') : null;
+    this.isWiping = false;
+
+    this.init();
+  }
+
+  init() {
+    this.initRainCanvas();
+    this.initCondensationCanvas();
+    this.bindWipeEvents();
+  }
+
+  /* -------------------------------------------------------------
+     1. Weather Mode Switching
+     ------------------------------------------------------------- */
+  setMode(mode) {
+    if (this.currentMode === mode) return;
+    this.currentMode = mode;
+
+    const weatherBtn = document.getElementById('btn-weather-mode');
+
+    if (mode === 'rain') {
+      if (this.skyWorld) {
+        this.skyWorld.classList.remove('mode-sunny');
+        this.skyWorld.classList.add('mode-rain');
+      }
+      if (weatherBtn) {
+        weatherBtn.innerHTML = '🌧️';
+        weatherBtn.setAttribute('data-tip', 'Đang mưa nhỏ (Chạm đổi Nắng)');
+        weatherBtn.classList.add('active');
+      }
+
+      this.startRain();
+      this.drawCondensationLayer();
+      if (window.soundEngine) {
+        window.soundEngine.setRainSound(true);
+      }
+    } else {
+      if (this.skyWorld) {
+        this.skyWorld.classList.remove('mode-rain');
+        this.skyWorld.classList.add('mode-sunny');
+      }
+      if (weatherBtn) {
+        weatherBtn.innerHTML = '☀️';
+        weatherBtn.setAttribute('data-tip', 'Đang nắng ấm (Chạm đổi Mưa)');
+        weatherBtn.classList.remove('active');
+      }
+
+      this.stopRain();
+      if (window.soundEngine) {
+        window.soundEngine.setRainSound(false);
+      }
+    }
+  }
+
+  toggleWeather() {
+    this.setMode(this.currentMode === 'sunny' ? 'rain' : 'sunny');
+  }
+
+  /* -------------------------------------------------------------
+     2. Rain Streaks Canvas
+     ------------------------------------------------------------- */
+  initRainCanvas() {
+    if (!this.rainCanvas) return;
+    const resize = () => {
+      this.rainCanvas.width = window.innerWidth;
+      this.rainCanvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    const TOTAL_DROPS = 140;
+    this.raindrops = [];
+    for (let i = 0; i < TOTAL_DROPS; i++) {
+      this.raindrops.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        len: Math.random() * 20 + 12,
+        speed: Math.random() * 12 + 16,
+        thickness: Math.random() * 1.2 + 0.8,
+        alpha: Math.random() * 0.4 + 0.2
+      });
+    }
+  }
+
+  startRain() {
+    if (this.rainAnimId) return;
+
+    const renderRain = () => {
+      if (this.currentMode !== 'rain') return;
+      this.rainCtx.clearRect(0, 0, this.rainCanvas.width, this.rainCanvas.height);
+
+      this.rainCtx.save();
+      this.rainCtx.strokeStyle = 'rgba(215, 235, 255, 0.45)';
+      this.rainCtx.lineWidth = 1.2;
+      this.rainCtx.lineCap = 'round';
+
+      const windDrift = 3; // slight angle
+
+      for (let drop of this.raindrops) {
+        this.rainCtx.beginPath();
+        this.rainCtx.moveTo(drop.x, drop.y);
+        this.rainCtx.lineTo(drop.x + windDrift, drop.y + drop.len);
+        this.rainCtx.stroke();
+
+        drop.x += windDrift;
+        drop.y += drop.speed;
+
+        if (drop.y > this.rainCanvas.height) {
+          drop.y = -drop.len;
+          drop.x = Math.random() * this.rainCanvas.width;
+        }
+        if (drop.x > this.rainCanvas.width) {
+          drop.x = 0;
+        }
+      }
+
+      this.rainCtx.restore();
+      this.rainAnimId = requestAnimationFrame(renderRain);
+    };
+
+    this.rainAnimId = requestAnimationFrame(renderRain);
+  }
+
+  stopRain() {
+    if (this.rainAnimId) {
+      cancelAnimationFrame(this.rainAnimId);
+      this.rainAnimId = null;
+    }
+    if (this.rainCtx) {
+      this.rainCtx.clearRect(0, 0, this.rainCanvas.width, this.rainCanvas.height);
+    }
+  }
+
+  /* -------------------------------------------------------------
+     3. Screen Glass Condensation & Wipe Mechanics
+     ------------------------------------------------------------- */
+  initCondensationCanvas() {
+    if (!this.condCanvas) return;
+    const resize = () => {
+      this.condCanvas.width = window.innerWidth;
+      this.condCanvas.height = window.innerHeight;
+      if (this.currentMode === 'rain') {
+        this.drawCondensationLayer();
+      }
+    };
+    resize();
+    window.addEventListener('resize', resize);
+  }
+
+  drawCondensationLayer() {
+    if (!this.condCtx) return;
+    const w = this.condCanvas.width;
+    const h = this.condCanvas.height;
+
+    // Reset composite operation to normal
+    this.condCtx.globalCompositeOperation = 'source-over';
+    
+    // Frosty misty steam coating
+    this.condCtx.fillStyle = 'rgba(215, 235, 250, 0.42)';
+    this.condCtx.fillRect(0, 0, w, h);
+
+    // Subtle condensation micro-droplet noise pattern
+    this.condCtx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    for (let i = 0; i < 600; i++) {
+      const rx = Math.random() * w;
+      const ry = Math.random() * h;
+      const rsize = Math.random() * 2.5 + 0.5;
+      this.condCtx.beginPath();
+      this.condCtx.arc(rx, ry, rsize, 0, Math.PI * 2);
+      this.condCtx.fill();
+    }
+  }
+
+  bindWipeEvents() {
+    if (!this.condCanvas) return;
+
+    const wipeAt = (x, y) => {
+      if (this.currentMode !== 'rain') return;
+      this.condCtx.save();
+      this.condCtx.globalCompositeOperation = 'destination-out';
+
+      // Soft finger wipe brush gradient
+      const radius = 35;
+      const gradient = this.condCtx.createRadialGradient(x, y, 5, x, y, radius);
+      gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      gradient.addColorStop(0.6, 'rgba(0, 0, 0, 0.8)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+      this.condCtx.fillStyle = gradient;
+      this.condCtx.beginPath();
+      this.condCtx.arc(x, y, radius, 0, Math.PI * 2);
+      this.condCtx.fill();
+      this.condCtx.restore();
+    };
+
+    // Mouse events
+    this.condCanvas.addEventListener('mousedown', (e) => {
+      this.isWiping = true;
+      wipeAt(e.clientX, e.clientY);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (this.isWiping) {
+        wipeAt(e.clientX, e.clientY);
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      this.isWiping = false;
+    });
+
+    // Touch events for mobile
+    this.condCanvas.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches[0]) {
+        this.isWiping = true;
+        wipeAt(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    this.condCanvas.addEventListener('touchmove', (e) => {
+      if (this.isWiping && e.touches && e.touches[0]) {
+        wipeAt(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    this.condCanvas.addEventListener('touchend', () => {
+      this.isWiping = false;
+    });
+  }
+
+  /* -------------------------------------------------------------
+     4. Wind Gust Action
+     ------------------------------------------------------------- */
+  triggerWind() {
+    if (this.skyWorld) {
+      this.skyWorld.classList.add('wind-gusting');
+      setTimeout(() => {
+        this.skyWorld.classList.remove('wind-gusting');
+      }, 4000);
+    }
+
+    if (window.soundEngine) {
+      window.soundEngine.playWhoosh();
+    }
+
+    // Apply sudden lateral impulse to macro bubbles
+    if (window.bubbleEngine && window.bubbleEngine.macroBubbles) {
+      window.bubbleEngine.macroBubbles.forEach(b => {
+        b.vx += (Math.random() * 25 + 15);
+        b.vy += (Math.random() * 10 - 5);
+      });
+    }
+  }
+}
+
+// Global instance
+window.weatherController = new WeatherController();

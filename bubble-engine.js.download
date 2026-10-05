@@ -1,0 +1,298 @@
+/**
+ * 3D Bubble Physics Engine & Particle Burst System
+ * Handles realistic floating mechanics, particle bursts on pop, and celestial orbit layout
+ */
+
+class BubbleEngine {
+  constructor() {
+    this.splashCanvas = document.getElementById('splash-canvas');
+    this.splashCtx = this.splashCanvas ? this.splashCanvas.getContext('2d') : null;
+    this.particles = [];
+    this.mouse = { x: -1000, y: -1000 };
+    this.macroBubbles = [];
+    this.introBubbles = [];
+    this.animationId = null;
+
+    this.initCanvas();
+    this.bindEvents();
+  }
+
+  initCanvas() {
+    if (!this.splashCanvas) return;
+    const resize = () => {
+      this.splashCanvas.width = window.innerWidth;
+      this.splashCanvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    this.loop();
+  }
+
+  bindEvents() {
+    window.addEventListener('mousemove', (e) => {
+      this.mouse.x = e.clientX;
+      this.mouse.y = e.clientY;
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches && e.touches[0]) {
+        this.mouse.x = e.touches[0].clientX;
+        this.mouse.y = e.touches[0].clientY;
+      }
+    }, { passive: true });
+  }
+
+  /**
+   * Spawn particle burst when any bubble bursts
+   */
+  createBurst(x, y, count = 35, scale = 1.0) {
+    const colors = [
+      'rgba(255, 255, 255, 0.95)',
+      'rgba(186, 230, 253, 0.9)',
+      'rgba(244, 114, 182, 0.85)',
+      'rgba(253, 224, 71, 0.85)',
+      'rgba(167, 243, 208, 0.85)',
+      'rgba(192, 132, 252, 0.85)'
+    ];
+
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = (Math.random() * 7 + 2) * scale;
+      this.particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - (Math.random() * 2),
+        radius: (Math.random() * 3.5 + 1.5) * scale,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        alpha: 1,
+        decay: Math.random() * 0.025 + 0.018,
+        gravity: 0.12,
+        isSparkle: Math.random() > 0.6
+      });
+    }
+
+    // Expanding shockwave ring
+    this.particles.push({
+      x: x,
+      y: y,
+      vx: 0,
+      vy: 0,
+      radius: 5,
+      maxRadius: (65 + Math.random() * 25) * scale,
+      ring: true,
+      color: 'rgba(255, 255, 255, 0.85)',
+      alpha: 0.9,
+      decay: 0.04
+    });
+  }
+
+  loop() {
+    if (this.splashCtx) {
+      this.splashCtx.clearRect(0, 0, this.splashCanvas.width, this.splashCanvas.height);
+
+      for (let i = this.particles.length - 1; i >= 0; i--) {
+        const p = this.particles[i];
+
+        if (p.ring) {
+          p.radius += (p.maxRadius - p.radius) * 0.18;
+          p.alpha -= p.decay;
+
+          this.splashCtx.save();
+          this.splashCtx.beginPath();
+          this.splashCtx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          this.splashCtx.lineWidth = 2.5;
+          this.splashCtx.strokeStyle = `rgba(255, 255, 255, ${Math.max(0, p.alpha)})`;
+          this.splashCtx.stroke();
+          this.splashCtx.restore();
+        } else {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += p.gravity;
+          p.vx *= 0.98;
+          p.alpha -= p.decay;
+
+          this.splashCtx.save();
+          this.splashCtx.beginPath();
+          this.splashCtx.arc(p.x, p.y, Math.max(0.5, p.radius), 0, Math.PI * 2);
+          this.splashCtx.fillStyle = p.color.replace(/[\d\.]+\)$/, `${Math.max(0, p.alpha)})`);
+          this.splashCtx.shadowBlur = p.isSparkle ? 10 : 3;
+          this.splashCtx.shadowColor = p.color;
+          this.splashCtx.fill();
+          this.splashCtx.restore();
+        }
+
+        if (p.alpha <= 0.01) {
+          this.particles.splice(i, 1);
+        }
+      }
+    }
+
+    // Apply soft cursor repulsion to macro bubbles
+    this.updateMacroBubbles();
+
+    this.animationId = requestAnimationFrame(() => this.loop());
+  }
+
+  /**
+   * Setup intro screen ascending bubbles
+   */
+  setupIntroBubbles(container, onPopAny) {
+    if (!container) return;
+    const TOTAL_INTRO_BUBBLES = 32;
+
+    for (let i = 0; i < TOTAL_INTRO_BUBBLES; i++) {
+      const bubble = document.createElement('div');
+      bubble.className = 'soap-bubble';
+
+      const size = Math.floor(Math.random() * 65 + 35); // 35px to 100px
+      const left = Math.random() * 92 + 4; // 4% to 96%
+      const bottom = -(Math.random() * 80 + 30); // start below screen
+      const duration = Math.random() * 12 + 10; // float speed
+      const delay = Math.random() * 10;
+
+      bubble.style.width = `${size}px`;
+      bubble.style.height = `${size}px`;
+      bubble.style.left = `${left}%`;
+      bubble.style.bottom = `${bottom}px`;
+      bubble.style.animation = `introAscend ${duration}s linear ${delay}s infinite, bubbleWobble ${Math.random() * 4 + 4}s ease-in-out infinite alternate`;
+      bubble.style.zIndex = '5006';
+
+      // Click to burst
+      bubble.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const rect = bubble.getBoundingClientRect();
+        this.createBurst(rect.left + rect.width / 2, rect.top + rect.height / 2, 25, 0.9);
+        bubble.style.display = 'none';
+        if (onPopAny) onPopAny();
+      });
+
+      container.appendChild(bubble);
+      this.introBubbles.push(bubble);
+    }
+
+    // Add keyframe for ascending intro bubbles
+    if (!document.getElementById('intro-ascend-style')) {
+      const style = document.createElement('style');
+      style.id = 'intro-ascend-style';
+      style.innerHTML = `
+        @keyframes introAscend {
+          0% { transform: translateY(0) scale(0.85); opacity: 0; }
+          15% { opacity: 0.95; }
+          85% { opacity: 0.95; }
+          100% { transform: translateY(-115vh) scale(1.1); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }
+
+  /**
+   * Register and arrange the 7 Macro Information Bubbles
+   */
+  setupMacroBubbles(elements) {
+    this.macroBubbles = elements.map((el, index) => {
+      return {
+        el: el,
+        baseX: 0,
+        baseY: 0,
+        currX: 0,
+        currY: 0,
+        vx: 0,
+        vy: 0,
+        isCenter: el.classList.contains('center-hero'),
+        index: index
+      };
+    });
+
+    this.repositionMacroBubbles();
+    window.addEventListener('resize', () => this.repositionMacroBubbles());
+  }
+
+  repositionMacroBubbles() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const cx = w / 2;
+    const cy = h / 2 - 15;
+
+    const isMobile = w < 850;
+    const radiusX = isMobile ? w * 0.38 : Math.min(w * 0.35, 460);
+    const radiusY = isMobile ? h * 0.34 : Math.min(h * 0.34, 300);
+
+    const nonCenterBubbles = this.macroBubbles.filter(b => !b.isCenter);
+    const totalOuter = nonCenterBubbles.length;
+
+    // Distribute outer bubbles around ellipse orbit
+    nonCenterBubbles.forEach((bubble, idx) => {
+      // Golden angle distribution starting from top
+      const angle = (idx / totalOuter) * Math.PI * 2 - Math.PI / 2;
+      const x = cx + Math.cos(angle) * radiusX - bubble.el.offsetWidth / 2;
+      const y = cy + Math.sin(angle) * radiusY - bubble.el.offsetHeight / 2;
+
+      bubble.baseX = x;
+      bubble.baseY = y;
+      bubble.currX = x;
+      bubble.currY = y;
+      bubble.el.style.left = `${x}px`;
+      bubble.el.style.top = `${y}px`;
+    });
+
+    // Center hero bubble
+    const center = this.macroBubbles.find(b => b.isCenter);
+    if (center) {
+      const x = cx - center.el.offsetWidth / 2;
+      const y = cy - center.el.offsetHeight / 2;
+      center.baseX = x;
+      center.baseY = y;
+      center.currX = x;
+      center.currY = y;
+      center.el.style.left = `${x}px`;
+      center.el.style.top = `${y}px`;
+    }
+  }
+
+  updateMacroBubbles() {
+    if (!this.macroBubbles || this.macroBubbles.length === 0) return;
+
+    for (let bubble of this.macroBubbles) {
+      if (bubble.el.classList.contains('popping') || bubble.el.style.display === 'none') {
+        continue;
+      }
+
+      const rect = bubble.el.getBoundingClientRect();
+      const bx = rect.left + rect.width / 2;
+      const by = rect.top + rect.height / 2;
+
+      // Mouse repulsion vector
+      const dx = bx - this.mouse.x;
+      const dy = by - this.mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = 200;
+
+      if (dist < maxDist && dist > 1) {
+        const force = (1 - dist / maxDist) * 35;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        bubble.vx += fx * 0.12;
+        bubble.vy += fy * 0.12;
+      }
+
+      // Spring back to base position
+      const springK = 0.04;
+      const damp = 0.88;
+      bubble.vx += (bubble.baseX - bubble.currX) * springK;
+      bubble.vy += (bubble.baseY - bubble.currY) * springK;
+
+      bubble.vx *= damp;
+      bubble.vy *= damp;
+
+      bubble.currX += bubble.vx;
+      bubble.currY += bubble.vy;
+
+      bubble.el.style.transform = `translate(${bubble.currX - bubble.baseX}px, ${bubble.currY - bubble.baseY}px)`;
+    }
+  }
+}
+
+// Global instance
+window.bubbleEngine = new BubbleEngine();
